@@ -99,6 +99,35 @@ void CSDLPlayer::loopEvents()
 		case SDL_VIDEOEXPOSE: {
 			break;
 		}
+		case SDL_VIDEORESIZE: {
+			m_surface = SDL_SetVideoMode(
+				event.resize.w,
+				event.resize.h,
+				0,
+				SDL_SWSURFACE | SDL_RESIZABLE
+			);
+
+			float videoRatio = (float)m_rect.w / (float)m_rect.h;
+			float windowRatio = (float)event.resize.w / (float)event.resize.h;
+
+			SDL_Rect dstRect;
+
+			if (windowRatio > videoRatio) {
+				dstRect.h = event.resize.h;
+				dstRect.w = (int)(dstRect.h * videoRatio);
+			}
+			else {
+				dstRect.w = event.resize.w;
+				dstRect.h = (int)(dstRect.w / videoRatio);
+			}
+
+			dstRect.x = (event.resize.w - dstRect.w) / 2;
+			dstRect.y = (event.resize.h - dstRect.h) / 2;
+
+			SDL_DisplayYUVOverlay(m_yuv, &dstRect);
+
+			break;
+		}
 		case SDL_ACTIVEEVENT: {
 			if (event.active.state & SDL_APPACTIVE) {
 				if (event.active.gain) {
@@ -200,12 +229,39 @@ void CSDLPlayer::outputVideo(SFgVideoFrame* data)
 
 	SDL_UnlockYUVOverlay(m_yuv);
 
-	m_rect.x = 0;
-	m_rect.y = 0;
-	m_rect.w = data->width;
-	m_rect.h = data->height;
+	int winW = m_surface->w;
+	int winH = m_surface->h;
 
-	SDL_DisplayYUVOverlay(m_yuv, &m_rect);
+	float videoRatio = (float)data->width / (float)data->height;
+	float windowRatio = (float)winW / (float)winH;
+
+	SDL_Rect dstRect;
+
+	if (windowRatio > videoRatio)
+	{
+		dstRect.h = winH;
+		dstRect.w = (int)(winH * videoRatio);
+	}
+	else
+	{
+		dstRect.w = winW;
+		dstRect.h = (int)(winW / videoRatio);
+	}
+
+	dstRect.x = (winW - dstRect.w) / 2;
+	dstRect.y = (winH - dstRect.h) / 2;
+
+	/* 清空背景，避免残影 */
+	SDL_FillRect(
+		m_surface,
+		NULL,
+		SDL_MapRGB(m_surface->format, 0, 0, 0)
+	);
+
+	SDL_DisplayYUVOverlay(m_yuv, &dstRect);
+
+	/* 更新整个窗口 */
+	SDL_Flip(m_surface);
 }
 
 void CSDLPlayer::outputAudio(SFgAudioFrame* data)
@@ -238,7 +294,12 @@ void CSDLPlayer::outputAudio(SFgAudioFrame* data)
 void CSDLPlayer::initVideo(int width, int height)
 {
 	// 0x115
-	m_surface = SDL_SetVideoMode(width, height, 0, SDL_SWSURFACE);
+	m_surface = SDL_SetVideoMode(
+    width,
+    height,
+    0,
+    SDL_SWSURFACE | SDL_RESIZABLE
+);
 	SDL_WM_SetCaption("AirPlay Demo [s - start server, q - stop server]", NULL);
 
 	{
